@@ -34,19 +34,31 @@ class SimplePIController:
         self.set_point = desired
 
     def update(self, measurement):
+
         # proportional error
         self.error = self.set_point - measurement
 
         # integral error
         self.integral += self.error
 
-        return self.Kp * self.error + self.Ki * self.integral
+        # The simulator is buggy and sometimes stops
+        # working when braking is applied, this hack
+        # is an attemp to keep it from locking up.
 
+        # Compute the controller throttle value
+        throttle = self.Kp * self.error + self.Ki * self.integral
+
+        # If the throttle value would be negative...
+        if throttle<0:
+
+            # Set it to zero instead
+            throttle = 0
+
+        return rval
 
 controller = SimplePIController(0.1, 0.002)
-set_speed = 20
+set_speed = 9
 controller.set_desired(set_speed)
-
 
 @sio.on('telemetry')
 def telemetry(sid, data):
@@ -60,8 +72,12 @@ def telemetry(sid, data):
         # The current image from the center camera of the car
         imgString = data["image"]
         image = Image.open(BytesIO(base64.b64decode(imgString)))
+
         image_array = np.asarray(image)
-        steering_angle = float(model.predict(image_array[None, :, :, :], batch_size=1))
+        
+        # Pass only the portion of the input image that the
+        # model is expecting
+        steering_angle = float(model.predict(image_array[None, 60:130, 60:260, :], batch_size=1))
 
         throttle = controller.update(float(speed))
 
